@@ -6,6 +6,7 @@ Task Timer CLI - A simple pomodoro timer and task tracker
 import time
 import json
 import os
+import csv
 from datetime import datetime
 from pathlib import Path
 
@@ -205,6 +206,31 @@ def show_stats():
     print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{total_time} minutes{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
+
+def export_tasks(filename):
+    """Export tasks to a CSV file"""
+    tasks=load_tasks()
+    if not tasks:
+        print(f"{Fore.YELLOW} No tasks to export.{Style.RESET_ALL}")
+        return
+
+    try:
+        with open(filename,'w',newline='',encoding='utf-8') as csvfile:
+            writer=csv.DictWriter(csvfile,fieldnames=["id","name","duration","completed","created_at","completed_at"])
+            writer.writeheader()
+            for task in tasks:
+                writer.writerow({
+                    "id": task.get("id"),
+                    "name": task.get("name"),
+                    "duration": task.get("duration"),
+                    "completed": task.get("completed"),
+                    "created_at": task.get("created_at"),
+                    "completed_at": task.get("completed_at", "")
+                })
+        print(f"{Fore.GREEN}✓ Tasks exported successfully to {filename}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED} Error exporting tasks: {e}{Style.RESET_ALL}")
+        
 def main():
     """Main CLI interface"""
     import sys
@@ -217,6 +243,8 @@ def main():
         print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py delete <task_id>{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py stats{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py export <filename.csv>{Style.RESET_ALL}")
+
         print(f"\n{Fore.CYAN}Examples:{Style.RESET_ALL}")
         print(f"  python task_timer.py start 1 --break 5")
         print(f"  python task_timer.py start 2 --break 10")
@@ -267,6 +295,13 @@ def main():
         elif command == "stats":
             show_stats()
         
+        elif command == "export":
+            if len(sys.argv) < 3:
+                print(f"{Fore.RED} Error: Filename required {Style.RESET_ALL}")
+                return
+            filename = sys.argv[2]
+            export_tasks(filename)
+        
         else:
             print(f"{Fore.RED}Unknown command: {command}{Style.RESET_ALL}")
     
@@ -277,3 +312,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+   
