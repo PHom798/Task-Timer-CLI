@@ -1,4 +1,4 @@
-        #!/usr/bin/env python3
+    # #!/usr/bin/env python3
 """
 Task Timer CLI - A simple pomodoro timer and task tracker
 """
@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 import sys
+import csv
 
 # Try to import colorama, fall back gracefully if not available
 try:
@@ -236,6 +237,30 @@ def show_stats():
     print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{total_time} minutes{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
+def export_to_csv():
+    tasks = load_tasks()
+    if not tasks:
+        print(f"{Fore.YELLOW}No tasks to export.{Style.RESET_ALL}")
+        return
+
+    csv_file = Path.cwd() / "task_timer_export.csv"
+    try:
+        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=["ID", "Name", "Duration (minutes)", "Completed", "Created At", "Completed At"])
+            writer.writeheader()
+            for task in tasks:
+                writer.writerow({
+                    "ID": task.get("id"),
+                    "Name": task.get("name"),
+                    "Duration (minutes)": task.get("duration"),
+                    "Completed": task.get("completed"),
+                    "Created At": task.get("created_at"),
+                    "Completed At": task.get("completed_at", "")
+                })
+            print(f"{Fore.GREEN} Successfully Exported to {csv_file}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED} Failed to export tasks: {e}{Style.RESET_ALL}")
+
 def main():
     """Main CLI interface"""
     
@@ -247,6 +272,7 @@ def main():
         print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>] [--silent]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py delete <task_id>{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py stats{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py export{Style.RESET_ALL}")
         print(f"\n{Fore.CYAN}Examples:{Style.RESET_ALL}")
         print(f"  python task_timer.py start 1 --break 5")
         print(f"  python task_timer.py start 2 --break 10 --silent")
@@ -314,6 +340,8 @@ def main():
         elif command == "stats":
             show_stats()
         
+        elif command == "export":
+            export_to_csv()
         else:
             print(f"{Fore.RED}Unknown command: {command}{Style.RESET_ALL}")
     
