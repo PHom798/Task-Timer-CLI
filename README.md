@@ -9,7 +9,8 @@ A simple command-line pomodoro timer and task tracker to boost your productivity
 - ⏰ Built-in pomodoro timer
 - 📊 Track completion statistics
 - 💾 Persistent task storage
-- 🎯 Simple and intuitive CLI
+- 🎯 Simple and intuitive CLI 
+- 🖥️ With GUI support
 
 ## Installation
 
@@ -82,7 +83,7 @@ MIT License - feel free to use this project for learning and improvement!
 - [ ] Export tasks to CSV
 - [ ] Task categories/tags
 - [ ] Sound notifications
-- [ ] GUI version
+- [x] GUI version
 - [ ] Configuration file support
 
 ---
