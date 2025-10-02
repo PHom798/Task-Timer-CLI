@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+        #!/usr/bin/env python3
 """
 Task Timer CLI - A simple pomodoro timer and task tracker
 """
@@ -6,9 +6,9 @@ Task Timer CLI - A simple pomodoro timer and task tracker
 import time
 import json
 import os
-import csv
 from datetime import datetime
 from pathlib import Path
+import sys
 
 # Try to import colorama, fall back gracefully if not available
 try:
@@ -30,8 +30,16 @@ except ImportError:
         BRIGHT = ''
         RESET_ALL = ''
 
+# Try to import playsound, fall back gracefully if not available
+try:
+    from playsound import playsound
+    SOUND_AVAILABLE = True
+except ImportError:
+    SOUND_AVAILABLE = False
+
 DATA_FILE = Path.home() / ".task_timer_data.json"
 DEFAULT_BREAK_DURATION = 5  # Default break duration in minutes
+SOUND_FILE = Path(__file__).parent / "notification.wav"
 
 def load_tasks():
     """Load tasks from JSON file"""
@@ -44,6 +52,15 @@ def save_tasks(tasks):
     """Save tasks to JSON file"""
     with open(DATA_FILE, 'w') as f:
         json.dump(tasks, f, indent=2)
+
+def play_notification_sound():
+    """Play notification sound if available"""
+    if SOUND_AVAILABLE and SOUND_FILE.exists():
+        try:
+            playsound(str(SOUND_FILE))
+        except Exception as e:
+            # Silently fail if sound playback fails
+            pass
 
 def add_task(name, duration=25):
     """Add a new task"""
@@ -79,7 +96,7 @@ def list_tasks():
         print(f"{status_color}{status} [{task['id']}] {Style.BRIGHT}{task['name']}{Style.RESET_ALL} {Fore.CYAN}- {task['duration']}min{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
-def run_timer(duration_minutes, label, is_break=False):
+def run_timer(duration_minutes, label, is_break=False, silent=False):
     """
     Run a timer for the specified duration
     
@@ -87,6 +104,7 @@ def run_timer(duration_minutes, label, is_break=False):
         duration_minutes: Duration in minutes
         label: Label to display for the timer
         is_break: Whether this is a break timer (affects colors)
+        silent: Whether to disable sound notification
     
     Returns:
         bool: True if timer completed, False if interrupted
@@ -127,6 +145,10 @@ def run_timer(duration_minutes, label, is_break=False):
             print(f"\r{time_color}{timer_icon} {mins:02d}:{secs:02d} remaining{Style.RESET_ALL}", end='', flush=True)
             time.sleep(1)
         
+        # Timer completed - play sound notification unless silent mode
+        if not silent:
+            play_notification_sound()
+        
         if is_break:
             print(f"\n\n{Fore.GREEN}{Style.BRIGHT}✨ Break time is over! Ready to get back to work?{Style.RESET_ALL}")
         else:
@@ -141,13 +163,14 @@ def run_timer(duration_minutes, label, is_break=False):
             print(f"\n\n{Fore.YELLOW}⏸️  Timer stopped.{Style.RESET_ALL}")
         return False
 
-def start_timer(task_id, break_duration=None):
+def start_timer(task_id, break_duration=None, silent=False):
     """
     Start a timer for a specific task with optional break
     
     Args:
         task_id: ID of the task to start
         break_duration: Optional break duration in minutes (None means no break)
+        silent: Whether to disable sound notifications
     """
     tasks = load_tasks()
     task = next((t for t in tasks if t["id"] == task_id), None)
@@ -156,8 +179,15 @@ def start_timer(task_id, break_duration=None):
         print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
         return
     
+    # Show sound status at the start
+    if not silent and SOUND_AVAILABLE and SOUND_FILE.exists():
+        print(f"{Fore.CYAN}🔔 Sound notifications enabled{Style.RESET_ALL}")
+    elif not silent and not SOUND_AVAILABLE:
+        print(f"{Fore.YELLOW}💡 Tip: Install playsound for audio notifications!{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}   pip install playsound{Style.RESET_ALL}")
+    
     # Run the work timer
-    completed = run_timer(task["duration"], task["name"], is_break=False)
+    completed = run_timer(task["duration"], task["name"], is_break=False, silent=silent)
     
     if completed:
         # Mark task as completed
@@ -171,7 +201,7 @@ def start_timer(task_id, break_duration=None):
             response = input(f"{Fore.YELLOW}Start {break_duration}-minute break? (Y/n): {Style.RESET_ALL}").strip().lower()
             
             if response != 'n':
-                run_timer(break_duration, f"Break after {task['name']}", is_break=True)
+                run_timer(break_duration, f"Break after {task['name']}", is_break=True, silent=silent)
                 print(f"\n{Fore.GREEN}✓ Task and break completed!{Style.RESET_ALL}")
             else:
                 print(f"{Fore.CYAN}Break skipped. Keep up the momentum!{Style.RESET_ALL}")
@@ -206,52 +236,30 @@ def show_stats():
     print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{total_time} minutes{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
-
-def export_tasks(filename):
-    """Export tasks to a CSV file"""
-    tasks=load_tasks()
-    if not tasks:
-        print(f"{Fore.YELLOW} No tasks to export.{Style.RESET_ALL}")
-        return
-
-    try:
-        with open(filename,'w',newline='',encoding='utf-8') as csvfile:
-            writer=csv.DictWriter(csvfile,fieldnames=["id","name","duration","completed","created_at","completed_at"])
-            writer.writeheader()
-            for task in tasks:
-                writer.writerow({
-                    "id": task.get("id"),
-                    "name": task.get("name"),
-                    "duration": task.get("duration"),
-                    "completed": task.get("completed"),
-                    "created_at": task.get("created_at"),
-                    "completed_at": task.get("completed_at", "")
-                })
-        print(f"{Fore.GREEN}✓ Tasks exported successfully to {filename}{Style.RESET_ALL}")
-    except Exception as e:
-        print(f"{Fore.RED} Error exporting tasks: {e}{Style.RESET_ALL}")
-        
 def main():
     """Main CLI interface"""
-    import sys
     
     if len(sys.argv) < 2:
         print(f"{Fore.CYAN}{Style.BRIGHT}Task Timer CLI - Pomodoro Timer & Task Tracker{Style.RESET_ALL}")
         print(f"\n{Fore.YELLOW}Usage:{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py add <task_name> [duration_minutes]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py list{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>]{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>] [--silent]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py delete <task_id>{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py stats{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py export <filename.csv>{Style.RESET_ALL}")
-
         print(f"\n{Fore.CYAN}Examples:{Style.RESET_ALL}")
         print(f"  python task_timer.py start 1 --break 5")
-        print(f"  python task_timer.py start 2 --break 10")
+        print(f"  python task_timer.py start 2 --break 10 --silent")
+        print(f"  python task_timer.py start 3 --silent")
         
         if not COLORS_AVAILABLE:
             print(f"\n💡 Tip: Install colorama for colorful output!")
             print(f"   pip install colorama")
+        
+        if not SOUND_AVAILABLE:
+            print(f"\n💡 Tip: Install playsound for audio notifications!")
+            print(f"   pip install playsound")
+        
         return
     
     command = sys.argv[1]
@@ -275,15 +283,26 @@ def main():
             
             task_id = int(sys.argv[2])
             
-            # Check for --break flag
+            # Parse flags
             break_duration = None
-            if len(sys.argv) > 3 and sys.argv[3] == "--break":
-                if len(sys.argv) > 4:
-                    break_duration = int(sys.argv[4])
-                else:
-                    break_duration = DEFAULT_BREAK_DURATION
+            silent = False
             
-            start_timer(task_id, break_duration)
+            i = 3
+            while i < len(sys.argv):
+                if sys.argv[i] == "--break":
+                    if i + 1 < len(sys.argv) and sys.argv[i + 1].isdigit():
+                        break_duration = int(sys.argv[i + 1])
+                        i += 2
+                    else:
+                        break_duration = DEFAULT_BREAK_DURATION
+                        i += 1
+                elif sys.argv[i] == "--silent":
+                    silent = True
+                    i += 1
+                else:
+                    i += 1
+            
+            start_timer(task_id, break_duration, silent)
         
         elif command == "delete":
             if len(sys.argv) < 3:
@@ -295,13 +314,6 @@ def main():
         elif command == "stats":
             show_stats()
         
-        elif command == "export":
-            if len(sys.argv) < 3:
-                print(f"{Fore.RED} Error: Filename required {Style.RESET_ALL}")
-                return
-            filename = sys.argv[2]
-            export_tasks(filename)
-        
         else:
             print(f"{Fore.RED}Unknown command: {command}{Style.RESET_ALL}")
     
@@ -312,7 +324,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-   
