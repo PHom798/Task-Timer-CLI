@@ -1,4 +1,4 @@
-    # #!/usr/bin/env python3
+    #!/usr/bin/env python3
 """
 Task Timer CLI - A simple pomodoro timer and task tracker
 """
@@ -9,7 +9,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 import sys
-import csv
 
 # Try to import colorama, fall back gracefully if not available
 try:
@@ -42,6 +41,18 @@ DATA_FILE = Path.home() / ".task_timer_data.json"
 DEFAULT_BREAK_DURATION = 5  # Default break duration in minutes
 SOUND_FILE = Path(__file__).parent / "notification.wav"
 
+def load_tasks():
+    """Load tasks from JSON file"""
+    if DATA_FILE.exists():
+        with open(DATA_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+def save_tasks(tasks):
+    """Save tasks to JSON file"""
+    with open(DATA_FILE, 'w') as f:
+        json.dump(tasks, f, indent=2)
+
 def play_notification_sound():
     """Play notification sound if available"""
     if SOUND_AVAILABLE and SOUND_FILE.exists():
@@ -49,87 +60,60 @@ def play_notification_sound():
             playsound(str(SOUND_FILE))
         except Exception as e:
             # Silently fail if sound playback fails
-            # You could add logging here for debugging
             pass
 
-class TaskManager:
-    """Handles all task data operations."""
-    def __init__(self, data_file=DATA_FILE):
-        self.data_file = data_file
-        self.tasks = self._load()
+def add_task(name, duration=25, tags=None):
+    """
+    Add a new task
+    
+    Args:
+        name: Task name
+        duration: Task duration in minutes
+        tags: List of tags for categorization
+    """
+    tasks = load_tasks()
+    task = {
+        "id": len(tasks) + 1,
+        "name": name,
+        "duration": duration,
+        "completed": False,
+        "created_at": datetime.now().isoformat(),
+        "tags": tags if tags else []
+    }
+    tasks.append(task)
+    save_tasks(tasks)
+    
+    tags_str = f" {Fore.MAGENTA}[{', '.join(tags)}]{Style.RESET_ALL}" if tags else ""
+    print(f"{Fore.GREEN}✓ Task added: {Style.BRIGHT}{name}{Style.RESET_ALL}{tags_str} {Fore.CYAN}({duration} minutes){Style.RESET_ALL}")
 
-    def _load(self):
-        if self.data_file.exists():
-            with open(self.data_file, 'r') as f:
-                return json.load(f)
-        return []
-
-    def _save(self):
-        with open(self.data_file, 'w') as f:
-            json.dump(self.tasks, f, indent=2)
-
-    def add(self, name, duration=25):
-        task = {
-            "id": len(self.tasks) + 1 if self.tasks else 1,
-            "name": name,
-            "duration": duration,
-            "completed": False,
-            "created_at": datetime.now().isoformat()
-        }
-        self.tasks.append(task)
-        self._save()
-        return task
-
-    def delete(self, task_id):
-        task_exists = any(t["id"] == task_id for t in self.tasks)
-        if not task_exists:
-            return False
-        self.tasks = [t for t in self.tasks if t["id"] != task_id]
-        self._save()
-        return True
-
-    def get_task(self, task_id):
-        return next((t for t in self.tasks if t["id"] == task_id), None)
-
-    def complete_task(self, task_id):
-        task = self.get_task(task_id)
-        if task:
-            task["completed"] = True
-            task["completed_at"] = datetime.now().isoformat()
-            self._save()
-            return True
-        return False
-
-    def get_stats(self):
-        total = len(self.tasks)
-        completed = sum(1 for t in self.tasks if t["completed"])
-        total_time = sum(t["duration"] for t in self.tasks if t["completed"])
-        return {
-            "total": total,
-            "completed": completed,
-            "pending": total - completed,
-            "total_time": total_time
-        }
-
-# --- CLI Functions (using the TaskManager) ---
-
-def add_task(name, duration=25):
-    """Add a new task"""
-    tm = TaskManager()
-    tm.add(name, duration)
-
-    print(f"{Fore.GREEN}✓ Task added: {Style.BRIGHT}{name}{Style.RESET_ALL} {Fore.CYAN}({duration} minutes){Style.RESET_ALL}")
-
-def list_tasks():
-    """List all tasks"""
-    tm = TaskManager()
-    tasks = tm.tasks
+def list_tasks(filter_tag=None):
+    """
+    List all tasks, optionally filtered by tag
+    
+    Args:
+        filter_tag: Optional tag to filter tasks by
+    """
+    tasks = load_tasks()
+    
+    # Filter by tag if specified
+    if filter_tag:
+        tasks = [t for t in tasks if filter_tag.lower() in [tag.lower() for tag in t.get("tags", [])]]
+        if not tasks:
+            print(f"{Fore.YELLOW}No tasks found with tag '{filter_tag}'{Style.RESET_ALL}")
+            return
+    
     if not tasks:
         print(f"{Fore.YELLOW}No tasks found. Add one with 'add' command!{Style.RESET_ALL}")
         return
     
-    print(f"\n{Fore.BLUE}{Style.BRIGHT}📋 Your Tasks:{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
+    # Header
+    if filter_tag:
+        print(f"\n{Fore.BLUE}{Style.BRIGHT}📋 Tasks filtered by '{filter_tag}':{Style.RESET_ALL}")
+    else:
+        print(f"\n{Fore.BLUE}{Style.BRIGHT}📋 Your Tasks:{Style.RESET_ALL}")
+    
+    print(f"{Fore.BLUE}-" * 60 + Style.RESET_ALL)
+    
     for task in tasks:
         if task["completed"]:
             status_color = Fore.GREEN
@@ -138,8 +122,27 @@ def list_tasks():
             status_color = Fore.YELLOW
             status = "○"
         
-        print(f"{status_color}{status} [{task['id']}] {Style.BRIGHT}{task['name']}{Style.RESET_ALL} {Fore.CYAN}- {task['duration']}min{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
+        # Format tags
+        tags_display = ""
+        if task.get("tags"):
+            tags_formatted = [f"{Fore.MAGENTA}#{tag}{Style.RESET_ALL}" for tag in task["tags"]]
+            tags_display = f" {' '.join(tags_formatted)}"
+        
+        print(f"{status_color}{status} [{task['id']}] {Style.BRIGHT}{task['name']}{Style.RESET_ALL} {Fore.CYAN}- {task['duration']}min{Style.RESET_ALL}{tags_display}")
+    
+    print(f"{Fore.BLUE}-" * 60 + Style.RESET_ALL)
+    
+    # Show tag summary if not filtering
+    if not filter_tag:
+        all_tags = {}
+        for task in tasks:
+            for tag in task.get("tags", []):
+                all_tags[tag.lower()] = all_tags.get(tag.lower(), 0) + 1
+        
+        if all_tags:
+            print(f"\n{Fore.CYAN}Available tags:{Style.RESET_ALL} ", end="")
+            tag_items = [f"{Fore.MAGENTA}#{tag}{Style.RESET_ALL} ({count})" for tag, count in sorted(all_tags.items())]
+            print(", ".join(tag_items))
 
 def run_timer(duration_minutes, label, is_break=False, silent=False):
     """
@@ -154,7 +157,6 @@ def run_timer(duration_minutes, label, is_break=False, silent=False):
     Returns:
         bool: True if timer completed, False if interrupted
     """
-
     duration = duration_minutes * 60  # Convert to seconds
     
     if is_break:
@@ -218,13 +220,14 @@ def start_timer(task_id, break_duration=None, silent=False):
         break_duration: Optional break duration in minutes (None means no break)
         silent: Whether to disable sound notifications
     """
-    tm = TaskManager()
-    task = tm.get_task(task_id)
+    tasks = load_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
     
     if not task:
         print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
         return
     
+    # Show sound status at the start
     if not silent and SOUND_AVAILABLE and SOUND_FILE.exists():
         print(f"{Fore.CYAN}🔔 Sound notifications enabled{Style.RESET_ALL}")
     elif not silent and not SOUND_AVAILABLE:
@@ -236,7 +239,9 @@ def start_timer(task_id, break_duration=None, silent=False):
     
     if completed:
         # Mark task as completed
-        tm.complete_task(task_id)
+        task["completed"] = True
+        task["completed_at"] = datetime.now().isoformat()
+        save_tasks(tasks)
         
         # Start break timer if requested
         if break_duration is not None:
@@ -253,49 +258,75 @@ def start_timer(task_id, break_duration=None, silent=False):
 
 def delete_task(task_id):
     """Delete a task"""
-    tm = TaskManager()
-    if tm.delete(task_id):
-        print(f"{Fore.GREEN}✓ Task {task_id} deleted{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
-
-def show_stats():
-    """Show completion statistics"""
-    tm = TaskManager()
-    stats = tm.get_stats()
+    tasks = load_tasks()
+    task_exists = any(t["id"] == task_id for t in tasks)
     
-    print(f"\n{Fore.BLUE}{Style.BRIGHT}📊 Your Statistics:{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
-    print(f"Total tasks: {Fore.CYAN}{Style.BRIGHT}{stats['total']}{Style.RESET_ALL}")
-    print(f"Completed: {Fore.GREEN}{Style.BRIGHT}{stats['completed']}{Style.RESET_ALL}")
-    print(f"Pending: {Fore.YELLOW}{Style.BRIGHT}{stats['pending']}{Style.RESET_ALL}")
-    print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{stats['total_time']} minutes{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
-
-def export_to_csv():
-    tm = TaskManager()
-    tasks = tm.tasks
-    if not tasks:
-        print(f"{Fore.YELLOW}No tasks to export.{Style.RESET_ALL}")
+    if not task_exists:
+        print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
         return
+    
+    tasks = [t for t in tasks if t["id"] != task_id]
+    save_tasks(tasks)
+    print(f"{Fore.GREEN}✓ Task {task_id} deleted{Style.RESET_ALL}")
 
-    csv_file = Path.cwd() / "task_timer_export.csv"
-    try:
-        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["ID", "Name", "Duration (minutes)", "Completed", "Created At", "Completed At"])
-            writer.writeheader()
-            for task in tasks:
-                writer.writerow({
-                    "ID": task.get("id"),
-                    "Name": task.get("name"),
-                    "Duration (minutes)": task.get("duration"),
-                    "Completed": task.get("completed"),
-                    "Created At": task.get("created_at"),
-                    "Completed At": task.get("completed_at", "")
-                })
-            print(f"{Fore.GREEN} Successfully Exported to {csv_file}{Style.RESET_ALL}")
-    except Exception as e:
-        print(f"{Fore.RED} Failed to export tasks: {e}{Style.RESET_ALL}")
+def show_stats(filter_tag=None):
+    """
+    Show completion statistics, optionally filtered by tag
+    
+    Args:
+        filter_tag: Optional tag to filter statistics by
+    """
+    tasks = load_tasks()
+    
+    # Filter by tag if specified
+    if filter_tag:
+        tasks = [t for t in tasks if filter_tag.lower() in [tag.lower() for tag in t.get("tags", [])]]
+    
+    total = len(tasks)
+    completed = sum(1 for t in tasks if t["completed"])
+    total_time = sum(t["duration"] for t in tasks if t["completed"])
+    
+    # Header
+    if filter_tag:
+        print(f"\n{Fore.BLUE}{Style.BRIGHT}📊 Statistics for '{filter_tag}':{Style.RESET_ALL}")
+    else:
+        print(f"\n{Fore.BLUE}{Style.BRIGHT}📊 Your Statistics:{Style.RESET_ALL}")
+    
+    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
+    print(f"Total tasks: {Fore.CYAN}{Style.BRIGHT}{total}{Style.RESET_ALL}")
+    print(f"Completed: {Fore.GREEN}{Style.BRIGHT}{completed}{Style.RESET_ALL}")
+    print(f"Pending: {Fore.YELLOW}{Style.BRIGHT}{total - completed}{Style.RESET_ALL}")
+    print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{total_time} minutes{Style.RESET_ALL}")
+    
+    # Show breakdown by tag if not filtering
+    if not filter_tag:
+        all_tasks = load_tasks()  # Get all tasks again for tag breakdown
+        tag_stats = {}
+        
+        for task in all_tasks:
+            for tag in task.get("tags", []):
+                tag_lower = tag.lower()
+                if tag_lower not in tag_stats:
+                    tag_stats[tag_lower] = {"total": 0, "completed": 0, "time": 0}
+                
+                tag_stats[tag_lower]["total"] += 1
+                if task["completed"]:
+                    tag_stats[tag_lower]["completed"] += 1
+                    tag_stats[tag_lower]["time"] += task["duration"]
+        
+        if tag_stats:
+            print(f"\n{Fore.CYAN}{Style.BRIGHT}Breakdown by tag:{Style.RESET_ALL}")
+            print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
+            
+            for tag, stats in sorted(tag_stats.items()):
+                completion_rate = (stats["completed"] / stats["total"] * 100) if stats["total"] > 0 else 0
+                print(f"{Fore.MAGENTA}#{tag}{Style.RESET_ALL}: "
+                      f"{Fore.CYAN}{stats['total']} tasks{Style.RESET_ALL}, "
+                      f"{Fore.GREEN}{stats['completed']} completed{Style.RESET_ALL} "
+                      f"({completion_rate:.0f}%), "
+                      f"{Fore.YELLOW}{stats['time']}min{Style.RESET_ALL}")
+    
+    print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
 def main():
     """Main CLI interface"""
@@ -303,16 +334,17 @@ def main():
     if len(sys.argv) < 2:
         print(f"{Fore.CYAN}{Style.BRIGHT}Task Timer CLI - Pomodoro Timer & Task Tracker{Style.RESET_ALL}")
         print(f"\n{Fore.YELLOW}Usage:{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py add <task_name> [duration_minutes]{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py list{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py add <task_name> [duration_minutes] [--tag <tag1> <tag2> ...]{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py list [--filter <tag>]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>] [--silent]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py delete <task_id>{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py stats{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py export{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py stats [--filter <tag>]{Style.RESET_ALL}")
         print(f"\n{Fore.CYAN}Examples:{Style.RESET_ALL}")
+        print(f"  python task_timer.py add \"Team meeting\" 30 --tag work meetings")
+        print(f"  python task_timer.py add \"Study Python\" 45 --tag personal learning")
+        print(f"  python task_timer.py list --filter work")
+        print(f"  python task_timer.py stats --filter personal")
         print(f"  python task_timer.py start 1 --break 5")
-        print(f"  python task_timer.py start 2 --break 10 --silent")
-        print(f"  python task_timer.py start 3 --silent")
         
         if not COLORS_AVAILABLE:
             print(f"\n💡 Tip: Install colorama for colorful output!")
@@ -331,12 +363,40 @@ def main():
             if len(sys.argv) < 3:
                 print(f"{Fore.RED}Error: Task name required{Style.RESET_ALL}")
                 return
+            
             name = sys.argv[2]
-            duration = int(sys.argv[3]) if len(sys.argv) > 3 else 25
-            add_task(name, duration)
+            duration = 25
+            tags = []
+            
+            # Parse duration and tags
+            i = 3
+            while i < len(sys.argv):
+                if sys.argv[i] == "--tag":
+                    # Collect all tags after --tag flag
+                    i += 1
+                    while i < len(sys.argv) and not sys.argv[i].startswith("--"):
+                        tags.append(sys.argv[i])
+                        i += 1
+                elif sys.argv[i].isdigit():
+                    duration = int(sys.argv[i])
+                    i += 1
+                else:
+                    i += 1
+            
+            add_task(name, duration, tags if tags else None)
         
         elif command == "list":
-            list_tasks()
+            filter_tag = None
+            
+            # Check for --filter flag
+            if len(sys.argv) > 2 and sys.argv[2] == "--filter":
+                if len(sys.argv) > 3:
+                    filter_tag = sys.argv[3]
+                else:
+                    print(f"{Fore.RED}Error: Tag name required after --filter{Style.RESET_ALL}")
+                    return
+            
+            list_tasks(filter_tag)
         
         elif command == "start":
             if len(sys.argv) < 3:
@@ -374,10 +434,18 @@ def main():
             delete_task(task_id)
         
         elif command == "stats":
-            show_stats()
+            filter_tag = None
+            
+            # Check for --filter flag
+            if len(sys.argv) > 2 and sys.argv[2] == "--filter":
+                if len(sys.argv) > 3:
+                    filter_tag = sys.argv[3]
+                else:
+                    print(f"{Fore.RED}Error: Tag name required after --filter{Style.RESET_ALL}")
+                    return
+            
+            show_stats(filter_tag)
         
-        elif command == "export":
-            export_to_csv()
         else:
             print(f"{Fore.RED}Unknown command: {command}{Style.RESET_ALL}")
     
@@ -388,5 +456,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# use py task_timer_gui.py to run gui version
