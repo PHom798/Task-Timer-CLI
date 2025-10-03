@@ -1,4 +1,4 @@
-    #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Task Timer CLI - A simple pomodoro timer and task tracker
 """
@@ -37,40 +37,158 @@ try:
 except ImportError:
     SOUND_AVAILABLE = False
 
+# Default file paths
 DATA_FILE = Path.home() / ".task_timer_data.json"
-DEFAULT_BREAK_DURATION = 5  # Default break duration in minutes
+CONFIG_FILE = Path.home() / ".task_timer_config.json"
 SOUND_FILE = Path(__file__).parent / "notification.wav"
+
+# Default configuration
+DEFAULT_CONFIG = {
+    "default_duration": 25,
+    "default_break": 5,
+    "sound_enabled": True,
+    "data_file": str(DATA_FILE),
+    "sound_file": str(SOUND_FILE)
+}
+
+def load_config():
+    """Load configuration from file or create with defaults"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                # Merge with defaults to handle missing keys
+                merged_config = DEFAULT_CONFIG.copy()
+                merged_config.update(config)
+                return merged_config
+        except Exception as e:
+            print(f"{Fore.YELLOW}Warning: Could not load config, using defaults{Style.RESET_ALL}")
+            return DEFAULT_CONFIG.copy()
+    return DEFAULT_CONFIG.copy()
+
+def save_config(config):
+    """Save configuration to file"""
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"{Fore.RED}Error saving config: {e}{Style.RESET_ALL}")
+        return False
+
+def init_config():
+    """Initialize configuration file with defaults"""
+    if not CONFIG_FILE.exists():
+        save_config(DEFAULT_CONFIG)
+        print(f"{Fore.GREEN}✓ Configuration file created at {CONFIG_FILE}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.YELLOW}Configuration file already exists at {CONFIG_FILE}{Style.RESET_ALL}")
+
+def show_config():
+    """Display current configuration"""
+    config = load_config()
+    print(f"\n{Fore.BLUE}{Style.BRIGHT}⚙️  Current Configuration:{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}-" * 60 + Style.RESET_ALL)
+    print(f"Default task duration: {Fore.CYAN}{config['default_duration']} minutes{Style.RESET_ALL}")
+    print(f"Default break duration: {Fore.CYAN}{config['default_break']} minutes{Style.RESET_ALL}")
+    print(f"Sound enabled: {Fore.CYAN}{config['sound_enabled']}{Style.RESET_ALL}")
+    print(f"Data file: {Fore.CYAN}{config['data_file']}{Style.RESET_ALL}")
+    print(f"Sound file: {Fore.CYAN}{config['sound_file']}{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}-" * 60 + Style.RESET_ALL)
+    print(f"\n{Fore.YELLOW}Config file location: {CONFIG_FILE}{Style.RESET_ALL}")
+
+def update_config(key, value):
+    """Update a configuration value"""
+    config = load_config()
+    
+    # Validate and convert value based on key
+    if key == "default_duration" or key == "default_break":
+        try:
+            value = int(value)
+            if value <= 0:
+                print(f"{Fore.RED}Error: Duration must be positive{Style.RESET_ALL}")
+                return False
+        except ValueError:
+            print(f"{Fore.RED}Error: Duration must be a number{Style.RESET_ALL}")
+            return False
+    elif key == "sound_enabled":
+        if value.lower() in ['true', '1', 'yes', 'on']:
+            value = True
+        elif value.lower() in ['false', '0', 'no', 'off']:
+            value = False
+        else:
+            print(f"{Fore.RED}Error: sound_enabled must be true/false{Style.RESET_ALL}")
+            return False
+    elif key == "data_file" or key == "sound_file":
+        # Expand ~ to home directory
+        value = str(Path(value).expanduser())
+    elif key not in DEFAULT_CONFIG:
+        print(f"{Fore.RED}Error: Unknown configuration key '{key}'{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}Valid keys: {', '.join(DEFAULT_CONFIG.keys())}{Style.RESET_ALL}")
+        return False
+    
+    config[key] = value
+    if save_config(config):
+        print(f"{Fore.GREEN}✓ Configuration updated: {key} = {value}{Style.RESET_ALL}")
+        return True
+    return False
+
+def reset_config():
+    """Reset configuration to defaults"""
+    if save_config(DEFAULT_CONFIG):
+        print(f"{Fore.GREEN}✓ Configuration reset to defaults{Style.RESET_ALL}")
+        return True
+    return False
 
 def load_tasks():
     """Load tasks from JSON file"""
-    if DATA_FILE.exists():
-        with open(DATA_FILE, 'r') as f:
+    config = load_config()
+    data_file = Path(config['data_file'])
+    
+    if data_file.exists():
+        with open(data_file, 'r') as f:
             return json.load(f)
     return []
 
 def save_tasks(tasks):
     """Save tasks to JSON file"""
-    with open(DATA_FILE, 'w') as f:
+    config = load_config()
+    data_file = Path(config['data_file'])
+    
+    with open(data_file, 'w') as f:
         json.dump(tasks, f, indent=2)
 
 def play_notification_sound():
-    """Play notification sound if available"""
-    if SOUND_AVAILABLE and SOUND_FILE.exists():
-        try:
-            playsound(str(SOUND_FILE))
-        except Exception as e:
-            # Silently fail if sound playback fails
-            pass
+    """Play notification sound if available and enabled"""
+    config = load_config()
+    
+    if not config['sound_enabled']:
+        return
+    
+    if SOUND_AVAILABLE:
+        sound_file = Path(config['sound_file'])
+        if sound_file.exists():
+            try:
+                playsound(str(sound_file))
+            except Exception as e:
+                # Silently fail if sound playback fails
+                pass
 
-def add_task(name, duration=25, tags=None):
+def add_task(name, duration=None, tags=None):
     """
     Add a new task
     
     Args:
         name: Task name
-        duration: Task duration in minutes
+        duration: Task duration in minutes (uses config default if None)
         tags: List of tags for categorization
     """
+    config = load_config()
+    
+    # Use default duration from config if not specified
+    if duration is None:
+        duration = config['default_duration']
+    
     tasks = load_tasks()
     task = {
         "id": len(tasks) + 1,
@@ -217,9 +335,10 @@ def start_timer(task_id, break_duration=None, silent=False):
     
     Args:
         task_id: ID of the task to start
-        break_duration: Optional break duration in minutes (None means no break)
+        break_duration: Optional break duration in minutes (uses config default if True, None means no break)
         silent: Whether to disable sound notifications
     """
+    config = load_config()
     tasks = load_tasks()
     task = next((t for t in tasks if t["id"] == task_id), None)
     
@@ -228,8 +347,12 @@ def start_timer(task_id, break_duration=None, silent=False):
         return
     
     # Show sound status at the start
-    if not silent and SOUND_AVAILABLE and SOUND_FILE.exists():
-        print(f"{Fore.CYAN}🔔 Sound notifications enabled{Style.RESET_ALL}")
+    if not silent and config['sound_enabled'] and SOUND_AVAILABLE:
+        sound_file = Path(config['sound_file'])
+        if sound_file.exists():
+            print(f"{Fore.CYAN}🔔 Sound notifications enabled{Style.RESET_ALL}")
+    elif not silent and not config['sound_enabled']:
+        print(f"{Fore.YELLOW}🔇 Sound notifications disabled in config{Style.RESET_ALL}")
     elif not silent and not SOUND_AVAILABLE:
         print(f"{Fore.YELLOW}💡 Tip: Install playsound for audio notifications!{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}   pip install playsound{Style.RESET_ALL}")
@@ -245,6 +368,10 @@ def start_timer(task_id, break_duration=None, silent=False):
         
         # Start break timer if requested
         if break_duration is not None:
+            # Use config default if True, otherwise use specified duration
+            if break_duration is True:
+                break_duration = config['default_break']
+            
             print(f"\n{Fore.CYAN}{'=' * 50}{Style.RESET_ALL}")
             response = input(f"{Fore.YELLOW}Start {break_duration}-minute break? (Y/n): {Style.RESET_ALL}").strip().lower()
             
@@ -332,19 +459,22 @@ def main():
     """Main CLI interface"""
     
     if len(sys.argv) < 2:
+        config = load_config()
         print(f"{Fore.CYAN}{Style.BRIGHT}Task Timer CLI - Pomodoro Timer & Task Tracker{Style.RESET_ALL}")
         print(f"\n{Fore.YELLOW}Usage:{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py add <task_name> [duration_minutes] [--tag <tag1> <tag2> ...]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py list [--filter <tag>]{Style.RESET_ALL}")
-        print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break <minutes>] [--silent]{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py start <task_id> [--break [<minutes>]] [--silent]{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py delete <task_id>{Style.RESET_ALL}")
         print(f"  {Fore.GREEN}python task_timer.py stats [--filter <tag>]{Style.RESET_ALL}")
+        print(f"  {Fore.GREEN}python task_timer.py config [show|set|reset|init]{Style.RESET_ALL}")
         print(f"\n{Fore.CYAN}Examples:{Style.RESET_ALL}")
         print(f"  python task_timer.py add \"Team meeting\" 30 --tag work meetings")
-        print(f"  python task_timer.py add \"Study Python\" 45 --tag personal learning")
+        print(f"  python task_timer.py add \"Study Python\" --tag personal learning  # Uses default {config['default_duration']}min")
         print(f"  python task_timer.py list --filter work")
-        print(f"  python task_timer.py stats --filter personal")
-        print(f"  python task_timer.py start 1 --break 5")
+        print(f"  python task_timer.py start 1 --break  # Uses default {config['default_break']}min break")
+        print(f"  python task_timer.py config show")
+        print(f"  python task_timer.py config set default_duration 30")
         
         if not COLORS_AVAILABLE:
             print(f"\n💡 Tip: Install colorama for colorful output!")
@@ -359,13 +489,32 @@ def main():
     command = sys.argv[1]
     
     try:
-        if command == "add":
+        if command == "config":
+            # Configuration commands
+            if len(sys.argv) < 3:
+                show_config()
+            elif sys.argv[2] == "show":
+                show_config()
+            elif sys.argv[2] == "init":
+                init_config()
+            elif sys.argv[2] == "reset":
+                reset_config()
+            elif sys.argv[2] == "set":
+                if len(sys.argv) < 5:
+                    print(f"{Fore.RED}Error: Usage: config set <key> <value>{Style.RESET_ALL}")
+                    return
+                update_config(sys.argv[3], sys.argv[4])
+            else:
+                print(f"{Fore.RED}Error: Unknown config command '{sys.argv[2]}'{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}Usage: config [show|set|reset|init]{Style.RESET_ALL}")
+        
+        elif command == "add":
             if len(sys.argv) < 3:
                 print(f"{Fore.RED}Error: Task name required{Style.RESET_ALL}")
                 return
             
             name = sys.argv[2]
-            duration = 25
+            duration = None
             tags = []
             
             # Parse duration and tags
@@ -416,7 +565,7 @@ def main():
                         break_duration = int(sys.argv[i + 1])
                         i += 2
                     else:
-                        break_duration = DEFAULT_BREAK_DURATION
+                        break_duration = True  # Use config default
                         i += 1
                 elif sys.argv[i] == "--silent":
                     silent = True
