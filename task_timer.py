@@ -42,18 +42,6 @@ DATA_FILE = Path.home() / ".task_timer_data.json"
 DEFAULT_BREAK_DURATION = 5  # Default break duration in minutes
 SOUND_FILE = Path(__file__).parent / "notification.wav"
 
-def load_tasks():
-    """Load tasks from JSON file"""
-    if DATA_FILE.exists():
-        with open(DATA_FILE, 'r') as f:
-            return json.load(f)
-    return []
-
-def save_tasks(tasks):
-    """Save tasks to JSON file"""
-    with open(DATA_FILE, 'w') as f:
-        json.dump(tasks, f, indent=2)
-
 def play_notification_sound():
     """Play notification sound if available"""
     if SOUND_AVAILABLE and SOUND_FILE.exists():
@@ -61,25 +49,81 @@ def play_notification_sound():
             playsound(str(SOUND_FILE))
         except Exception as e:
             # Silently fail if sound playback fails
+            # You could add logging here for debugging
             pass
+
+class TaskManager:
+    """Handles all task data operations."""
+    def __init__(self, data_file=DATA_FILE):
+        self.data_file = data_file
+        self.tasks = self._load()
+
+    def _load(self):
+        if self.data_file.exists():
+            with open(self.data_file, 'r') as f:
+                return json.load(f)
+        return []
+
+    def _save(self):
+        with open(self.data_file, 'w') as f:
+            json.dump(self.tasks, f, indent=2)
+
+    def add(self, name, duration=25):
+        task = {
+            "id": len(self.tasks) + 1 if self.tasks else 1,
+            "name": name,
+            "duration": duration,
+            "completed": False,
+            "created_at": datetime.now().isoformat()
+        }
+        self.tasks.append(task)
+        self._save()
+        return task
+
+    def delete(self, task_id):
+        task_exists = any(t["id"] == task_id for t in self.tasks)
+        if not task_exists:
+            return False
+        self.tasks = [t for t in self.tasks if t["id"] != task_id]
+        self._save()
+        return True
+
+    def get_task(self, task_id):
+        return next((t for t in self.tasks if t["id"] == task_id), None)
+
+    def complete_task(self, task_id):
+        task = self.get_task(task_id)
+        if task:
+            task["completed"] = True
+            task["completed_at"] = datetime.now().isoformat()
+            self._save()
+            return True
+        return False
+
+    def get_stats(self):
+        total = len(self.tasks)
+        completed = sum(1 for t in self.tasks if t["completed"])
+        total_time = sum(t["duration"] for t in self.tasks if t["completed"])
+        return {
+            "total": total,
+            "completed": completed,
+            "pending": total - completed,
+            "total_time": total_time
+        }
+
+# --- CLI Functions (using the TaskManager) ---
 
 def add_task(name, duration=25):
     """Add a new task"""
-    tasks = load_tasks()
-    task = {
-        "id": len(tasks) + 1,
-        "name": name,
-        "duration": duration,
-        "completed": False,
-        "created_at": datetime.now().isoformat()
-    }
-    tasks.append(task)
-    save_tasks(tasks)
+    tm = TaskManager()
+    tm.add(name, duration)
+
     print(f"{Fore.GREEN}✓ Task added: {Style.BRIGHT}{name}{Style.RESET_ALL} {Fore.CYAN}({duration} minutes){Style.RESET_ALL}")
 
 def list_tasks():
     """List all tasks"""
-    tasks = load_tasks()
+    tm = TaskManager()
+    tasks = tm.tasks
     if not tasks:
         print(f"{Fore.YELLOW}No tasks found. Add one with 'add' command!{Style.RESET_ALL}")
         return
@@ -110,6 +154,7 @@ def run_timer(duration_minutes, label, is_break=False, silent=False):
     Returns:
         bool: True if timer completed, False if interrupted
     """
+
     duration = duration_minutes * 60  # Convert to seconds
     
     if is_break:
@@ -173,14 +218,13 @@ def start_timer(task_id, break_duration=None, silent=False):
         break_duration: Optional break duration in minutes (None means no break)
         silent: Whether to disable sound notifications
     """
-    tasks = load_tasks()
-    task = next((t for t in tasks if t["id"] == task_id), None)
+    tm = TaskManager()
+    task = tm.get_task(task_id)
     
     if not task:
         print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
         return
     
-    # Show sound status at the start
     if not silent and SOUND_AVAILABLE and SOUND_FILE.exists():
         print(f"{Fore.CYAN}🔔 Sound notifications enabled{Style.RESET_ALL}")
     elif not silent and not SOUND_AVAILABLE:
@@ -192,9 +236,7 @@ def start_timer(task_id, break_duration=None, silent=False):
     
     if completed:
         # Mark task as completed
-        task["completed"] = True
-        task["completed_at"] = datetime.now().isoformat()
-        save_tasks(tasks)
+        tm.complete_task(task_id)
         
         # Start break timer if requested
         if break_duration is not None:
@@ -211,34 +253,28 @@ def start_timer(task_id, break_duration=None, silent=False):
 
 def delete_task(task_id):
     """Delete a task"""
-    tasks = load_tasks()
-    task_exists = any(t["id"] == task_id for t in tasks)
-    
-    if not task_exists:
+    tm = TaskManager()
+    if tm.delete(task_id):
+        print(f"{Fore.GREEN}✓ Task {task_id} deleted{Style.RESET_ALL}")
+    else:
         print(f"{Fore.RED}✗ Task {task_id} not found!{Style.RESET_ALL}")
-        return
-    
-    tasks = [t for t in tasks if t["id"] != task_id]
-    save_tasks(tasks)
-    print(f"{Fore.GREEN}✓ Task {task_id} deleted{Style.RESET_ALL}")
 
 def show_stats():
     """Show completion statistics"""
-    tasks = load_tasks()
-    total = len(tasks)
-    completed = sum(1 for t in tasks if t["completed"])
-    total_time = sum(t["duration"] for t in tasks if t["completed"])
+    tm = TaskManager()
+    stats = tm.get_stats()
     
     print(f"\n{Fore.BLUE}{Style.BRIGHT}📊 Your Statistics:{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
-    print(f"Total tasks: {Fore.CYAN}{Style.BRIGHT}{total}{Style.RESET_ALL}")
-    print(f"Completed: {Fore.GREEN}{Style.BRIGHT}{completed}{Style.RESET_ALL}")
-    print(f"Pending: {Fore.YELLOW}{Style.BRIGHT}{total - completed}{Style.RESET_ALL}")
-    print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{total_time} minutes{Style.RESET_ALL}")
+    print(f"Total tasks: {Fore.CYAN}{Style.BRIGHT}{stats['total']}{Style.RESET_ALL}")
+    print(f"Completed: {Fore.GREEN}{Style.BRIGHT}{stats['completed']}{Style.RESET_ALL}")
+    print(f"Pending: {Fore.YELLOW}{Style.BRIGHT}{stats['pending']}{Style.RESET_ALL}")
+    print(f"Total time spent: {Fore.MAGENTA}{Style.BRIGHT}{stats['total_time']} minutes{Style.RESET_ALL}")
     print(f"{Fore.BLUE}-" * 50 + Style.RESET_ALL)
 
 def export_to_csv():
-    tasks = load_tasks()
+    tm = TaskManager()
+    tasks = tm.tasks
     if not tasks:
         print(f"{Fore.YELLOW}No tasks to export.{Style.RESET_ALL}")
         return
@@ -352,3 +388,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# use py task_timer_gui.py to run gui version
