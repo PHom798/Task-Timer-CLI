@@ -83,7 +83,6 @@ MIT License - feel free to use this project for learning and improvement!
 - [ ] Export tasks to CSV
 - [ ] Task categories/tags
 - [ ] Sound notifications
-- [x] GUI version
 - [ ] Configuration file support
 
 ---
